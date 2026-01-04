@@ -44,6 +44,8 @@ end
 
 local player_guid = nil
 local tracked_guids = {}
+local main_tanks = {}  -- [guid] = player_name
+local off_tanks = {}   -- [guid] = player_name
 
 local cc_spells = {
   "Polymorph",
@@ -70,6 +72,15 @@ local function UnitIsCC(unit)
     end
   end
   return false
+end
+
+local function GetTankRole(guid)
+  if main_tanks[guid] then
+    return "MT"
+  elseif off_tanks[guid] then
+    return "OT"
+  end
+  return nil
 end
 
 -- Copied from shagu since it resembled what I was trying to do anyway
@@ -196,8 +207,16 @@ local function InitPlate(plate)
         -- fleeing but was attacking you
         this:SetStatusBarColor(0, 1, 0, 1) -- green
       else
-        -- not attacking you
-        this:SetStatusBarColor(1, 0, 0, 1) -- red
+        -- not attacking you, check tank assignments
+        local target_role = GetTankRole(unit.current_target)
+        if target_role == "MT" then
+          this:SetStatusBarColor(0, 1, 0, 1) -- bright green - MT has aggro
+        elseif target_role == "OT" then
+          this:SetStatusBarColor(0, 0.6, 0, 1) -- dark green - OT has aggro
+        else
+          -- non-tank has aggro
+          this:SetStatusBarColor(1, 0, 0, 1) -- red
+        end
       end
     else
       this:SetStatusBarColor(unpack(unit.healthbar_color))
@@ -254,6 +273,91 @@ local function Update()
   end
 end
 
+local function SlashHandler(msg)
+  local args = {}
+  for word in string.gmatch(msg, "%S+") do
+    table.insert(args, word)
+  end
+  
+  if #args == 0 or args[1] == "list" then
+    -- Show current assignments
+    tp_print("=== TankPlates Assignments ===")
+    local mt_count = 0
+    tp_print("Main Tanks:")
+    for guid, name in pairs(main_tanks) do
+      tp_print("  - " .. name)
+      mt_count = mt_count + 1
+    end
+    if mt_count == 0 then
+      tp_print("  (none)")
+    end
+    
+    local ot_count = 0
+    tp_print("Off Tanks:")
+    for guid, name in pairs(off_tanks) do
+      tp_print("  - " .. name)
+      ot_count = ot_count + 1
+    end
+    if ot_count == 0 then
+      tp_print("  (none)")
+    end
+    return
+  end
+  
+  if args[1] == "add" and args[2] and args[3] then
+    local role = string.lower(args[2])
+    local name = args[3]
+    local _, guid = UnitExists(name)
+    
+    if not guid then
+      tp_print("Player '" .. name .. "' not found. Must be in your raid/party.")
+      return
+    end
+    
+    if role == "mt" then
+      main_tanks[guid] = UnitName(name)
+      tp_print("Added " .. UnitName(name) .. " as Main Tank")
+    elseif role == "ot" then
+      off_tanks[guid] = UnitName(name)
+      tp_print("Added " .. UnitName(name) .. " as Off Tank")
+    else
+      tp_print("Usage: /tp add [mt|ot] [name]")
+    end
+    return
+  end
+  
+  if args[1] == "remove" and args[2] and args[3] then
+    local role = string.lower(args[2])
+    local name = args[3]
+    local _, guid = UnitExists(name)
+    
+    if role == "mt" then
+      main_tanks[guid] = nil
+      tp_print("Removed " .. name .. " from Main Tanks")
+    elseif role == "ot" then
+      off_tanks[guid] = nil
+      tp_print("Removed " .. name .. " from Off Tanks")
+    end
+    return
+  end
+  
+  if args[1] == "clear" then
+    main_tanks = {}
+    off_tanks = {}
+    tp_print("Cleared all tank assignments")
+    return
+  end
+  
+  -- Help text
+  tp_print("TankPlates Commands:")
+  tp_print("/tp - Show current assignments")
+  tp_print("/tp add mt [name] - Add Main Tank")
+  tp_print("/tp add ot [name] - Add Off Tank")
+  tp_print("/tp remove mt [name] - Remove Main Tank")
+  tp_print("/tp remove ot [name] - Remove Off Tank")
+  tp_print("/tp clear - Clear all assignments")
+end
+
 local function Events()
   if event == "UNIT_CASTEVENT" then
     local _,source = UnitExists(arg1)
@@ -291,3 +395,6 @@ local tankplates = CreateFrame("Frame")
 tankplates:SetScript("OnEvent", Init)
 tankplates:RegisterEvent("PLAYER_ENTERING_WORLD")
 tankplates:RegisterEvent("UNIT_CASTEVENT")
+
+SLASH_TANKPLATES1 = "/tp"
+SlashCmdList["TANKPLATES"] = SlashHandler
