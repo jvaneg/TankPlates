@@ -349,9 +349,10 @@ function TP_TankListScrollFrame_Update()
   end
 end
 
--- Tank list button click handler
+-- Tank list button click handler (called from [X] button)
 function TP_TankListButton_OnClick()
-  local id = this:GetID()
+  -- Get ID from parent button (the [X] is a child of the main button)
+  local id = this:GetParent():GetID()
   if id and tanks[id] then
     local name = tanks[id].name
     table.remove(tanks, id)
