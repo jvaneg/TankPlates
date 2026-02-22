@@ -229,7 +229,7 @@ local function InitPlate(plate)
         -- PFUI and ShaguPlates use enemy bar colors to determine types, this can really mess with things.
         -- For instance if we choose (0,0,1,1) blue, the shagu reads this as friendly player and may color based on class.
         -- Due to this yellow (neutral) has been chosen for now.
-        this:SetStatusBarColor(1, 1, 0, 0.6)
+        this:SetStatusBarColor(1, 1, 0, 1)
       elseif (unit.casting and (unit.casting_at == player_guid or unit.previous_target == player_guid)) then
         new_reason = "CastingAtYou"
         -- casting on someone but was attacking you
@@ -264,7 +264,7 @@ local function InitPlate(plate)
           this:SetStatusBarColor(0, 1, 0, 1) -- bright green - YOU have aggro
         elseif IsTank(effective_target) then
           new_reason = "OtherTankAggro"
-          this:SetStatusBarColor(0, 0.6, 0, 1) -- dark green - other tank has aggro
+          this:SetStatusBarColor(0, 0, 1, 1) -- blue - other tank has aggro
         else
           new_reason = "NonTankAggro"
           -- non-tank has aggro
