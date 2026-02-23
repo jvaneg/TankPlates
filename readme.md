@@ -16,13 +16,14 @@ Use `/tp` to open the tank list window and manage multiple tanks.
 
 **Color Guide:**
 * Bright Green - You have aggro
-* Dark Green - Another tank has aggro
+* Blue - Another tank has aggro
 * Red - Non-tank has aggro (DPS/healer pulled!)
 * Yellow - Enemy is crowd controlled
 
 ## Bugs / Missing Features
 
-* Not fully compatable with ShaguTweaks nameplates, but compatable with pfUI and ShaguPlates. Turn off ShaguTweaks nameplate options to use TankPlates.  
+* Not fully compatable with ShaguTweaks nameplates, but compatable with pfUI and ShaguPlates. Turn off ShaguTweaks nameplate options to use TankPlates.
+* Other tank function may have issues due to blue nameplates in pfUI/ShaguPlates
 
 ___
 * Made by and for Weird Vibes of Turtle Wow  
