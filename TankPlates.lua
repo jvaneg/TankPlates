@@ -182,6 +182,31 @@ local function InitPlate(plate)
   end)
 
   local origname = plate.namefontstring:GetText()
+
+  -- helper that selects the correct bar to color; if ShaguPlates has created a
+  -- custom overlay we direct our colours there instead of touching the Blizzard
+  -- healthbar (which Shagu reads to determine its own colour).  We also tint a
+  -- surrounding border/backdrop if one exists.
+  local function SetHealthBarColor(bar, r, g, b, a)
+    a = a or 1
+
+    -- function that will paint a backdrop if present
+    local function paintBorder(obj)
+      if obj and obj.backdrop and obj.backdrop.SetBackdropBorderColor then
+        obj.backdrop:SetBackdropBorderColor(r, g, b, a)
+      elseif obj and obj.SetBackdropBorderColor then
+        obj:SetBackdropBorderColor(r, g, b, a)
+      end
+    end
+
+    if ShaguPlates and plate.nameplate and plate.nameplate.health then
+      plate.nameplate.health:SetStatusBarColor(r, g, b, a)
+      paintBorder(plate.nameplate.health)
+    else
+      bar:SetStatusBarColor(r, g, b, a)
+      paintBorder(bar)
+    end
+  end
   local function UpdateHealth()
     local plate = this:GetParent()
     local guid = plate:GetName(1)
@@ -229,19 +254,20 @@ local function InitPlate(plate)
         -- PFUI and ShaguPlates use enemy bar colors to determine types, this can really mess with things.
         -- For instance if we choose (0,0,1,1) blue, the shagu reads this as friendly player and may color based on class.
         -- Due to this yellow (neutral) has been chosen for now.
-        this:SetStatusBarColor(1, 1, 0, 1)
+        SetHealthBarColor(this, 1, 1, 0, 1)
       elseif (unit.casting and (unit.casting_at == player_guid or unit.previous_target == player_guid)) then
         new_reason = "CastingAtYou"
         -- casting on someone but was attacking you
-        this:SetStatusBarColor(0, 1, 0, 1) -- green
+        SetHealthBarColor(this, 0, 1, 0, 1) -- green
       elseif unit.current_target == player_guid then
         new_reason = "AttackingYou"
         -- attacking you
-        this:SetStatusBarColor(0, 1, 0, 1) -- green
+        -- white confused ShaguPlates when it samples the underlying bar
+        SetHealthBarColor(this, 0, 1, 0, 1) -- green (use same as others)
       elseif not unit.casting and (not unit.current_target and unit.previous_target == player_guid) then
         new_reason = "Fleeing"
         -- fleeing but was attacking you
-        this:SetStatusBarColor(0, 1, 0, 1) -- green
+        SetHealthBarColor(this, 0, 1, 0, 1) -- green
       else
         -- not attacking you, check tank assignments
         
@@ -261,14 +287,14 @@ local function InitPlate(plate)
         
         if IsPlayerTank(effective_target) then
           new_reason = "PlayerTankAggro"
-          this:SetStatusBarColor(0, 1, 0, 1) -- bright green - YOU have aggro
+          SetHealthBarColor(this, 0, 1, 0, 1) -- bright green - YOU have aggro
         elseif IsTank(effective_target) then
           new_reason = "OtherTankAggro"
-          this:SetStatusBarColor(0, 0, 1, 1) -- blue - other tank has aggro
+          SetHealthBarColor(this, 0, 0, 1, 1) -- blue - other tank has aggro
         else
           new_reason = "NonTankAggro"
           -- non-tank has aggro
-          this:SetStatusBarColor(1, 0, 0, 1) -- red
+          SetHealthBarColor(this, 1, 0, 0, 1) -- red
         end
       end
       
@@ -292,7 +318,7 @@ local function InitPlate(plate)
         unit.last_color_reason = new_reason
       end
     else
-      this:SetStatusBarColor(unpack(unit.healthbar_color))
+      SetHealthBarColor(this, unpack(unit.healthbar_color))
     end
   end
 
@@ -525,7 +551,17 @@ local function SlashHandler(msg)
 end
 
 local function Events()
-  if event == "UNIT_CASTEVENT" then
+  if event == "ADDON_LOADED" then
+    -- shagu can load after us; re-init plates so our hooks run last
+    if arg1 == "ShaguPlates" then
+      for _,plate in pairs({ WorldFrame:GetChildren() }) do
+        if IsNamePlate(plate) then
+          plate.initialized = nil          -- allow InitPlate to run again
+          InitPlate(plate)
+        end
+      end
+    end
+  elseif event == "UNIT_CASTEVENT" then
     local _,source = UnitExists(arg1)
     local _,target = UnitExists(arg2)
 
@@ -555,6 +591,16 @@ local function Init()
     this:SetScript("OnEvent", Events)
     this:SetScript("OnUpdate", Update)
     this:UnregisterEvent("PLAYER_ENTERING_WORLD")
+
+    -- if shagu already present, make sure plates are hooked after it
+    if ShaguPlates then
+      for _,plate in pairs({ WorldFrame:GetChildren() }) do
+        if IsNamePlate(plate) then
+          plate.initialized = nil
+          InitPlate(plate)
+        end
+      end
+    end
   end
 end
 
@@ -562,6 +608,7 @@ local tankplates = CreateFrame("Frame")
 tankplates:SetScript("OnEvent", Init)
 tankplates:RegisterEvent("PLAYER_ENTERING_WORLD")
 tankplates:RegisterEvent("UNIT_CASTEVENT")
+tankplates:RegisterEvent("ADDON_LOADED")  -- watch for ShaguPlates loading later
 
 SLASH_TANKPLATES1 = "/tp"
 SlashCmdList["TANKPLATES"] = SlashHandler
