@@ -57,6 +57,12 @@ local player_guid = nil
 local tracked_guids = {}
 local tanks = {}  -- Array of {name = player_name, guid = guid}
 
+-- Colours
+local GREEN = { .6, 1, 0, .8 }
+local RED = { .9, .2, .3, .8 }
+local YELLOW = { 1, 1, .3, .8 }
+local DARK_GREEN = { .5, .7, .3, .8 }
+
 -- shackle, sheep, hibernate, magic dust, etc
 local function UnitIsCC(unit)
   for i=1,40 do
@@ -207,6 +213,8 @@ local function InitPlate(plate)
       paintBorder(bar)
     end
   end
+
+
   local function UpdateHealth()
     local plate = this:GetParent()
     local guid = plate:GetName(1)
@@ -251,23 +259,19 @@ local function InitPlate(plate)
       
       if unit.cc then
         new_reason = "CC"
-        -- PFUI and ShaguPlates use enemy bar colors to determine types, this can really mess with things.
-        -- For instance if we choose (0,0,1,1) blue, the shagu reads this as friendly player and may color based on class.
-        -- Due to this yellow (neutral) has been chosen for now.
-        SetHealthBarColor(this, 1, 1, 0, 1)
+        SetHealthBarColor(this, unpack(YELLOW))
       elseif (unit.casting and (unit.casting_at == player_guid or unit.previous_target == player_guid)) then
         new_reason = "CastingAtYou"
         -- casting on someone but was attacking you
-        SetHealthBarColor(this, 0, 1, 0, 1) -- green
+        SetHealthBarColor(this, unpack(GREEN)) -- green
       elseif unit.current_target == player_guid then
         new_reason = "AttackingYou"
         -- attacking you
-        -- white confused ShaguPlates when it samples the underlying bar
-        SetHealthBarColor(this, 0, 1, 0, 1) -- green (use same as others)
+        SetHealthBarColor(this, unpack(GREEN)) -- green (use same as others)
       elseif not unit.casting and (not unit.current_target and unit.previous_target == player_guid) then
         new_reason = "Fleeing"
         -- fleeing but was attacking you
-        SetHealthBarColor(this, 0, 1, 0, 1) -- green
+        SetHealthBarColor(this, unpack(GREEN)) -- green
       else
         -- not attacking you, check tank assignments
         
@@ -287,14 +291,14 @@ local function InitPlate(plate)
         
         if IsPlayerTank(effective_target) then
           new_reason = "PlayerTankAggro"
-          SetHealthBarColor(this, 0, 1, 0, 1) -- bright green - YOU have aggro
+          SetHealthBarColor(this, unpack(GREEN)) -- bright green - YOU have aggro
         elseif IsTank(effective_target) then
           new_reason = "OtherTankAggro"
-          SetHealthBarColor(this, 0, 0, 1, 1) -- blue - other tank has aggro
+          SetHealthBarColor(this, unpack(DARK_GREEN)) -- blue - other tank has aggro
         else
           new_reason = "NonTankAggro"
           -- non-tank has aggro
-          SetHealthBarColor(this, 1, 0, 0, 1) -- red
+          SetHealthBarColor(this, unpack(RED)) -- red
         end
       end
       
@@ -318,7 +322,12 @@ local function InitPlate(plate)
         unit.last_color_reason = new_reason
       end
     else
-      SetHealthBarColor(this, unpack(unit.healthbar_color))
+      -- not currently applying any special colouring; make sure we remember the
+      -- underlying bar colour so that when the mob drops out of combat we don't
+      -- keep painting it red/blue/green from an earlier fight.
+      local r,g,b,a = this:GetStatusBarColor()
+      unit.healthbar_color = { r, g, b, a }
+      SetHealthBarColor(this, r, g, b, a)
     end
   end
 
