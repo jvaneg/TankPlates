@@ -22,8 +22,8 @@ Use `/tp` to open the tank list window and manage multiple tanks.
 
 ## Compatibility & Notes
 
-* Colours were previously not being passed through correctly to *ShaguPlates* nameplates; this is now fixed and TankPlates works with **ShaguPlates** and **pfUI**.
-* Disable nameplate options in *ShaguTweaks* if you use that mod alongside TankPlates.
+* Colours were previously not being passed through correctly to *ShaguPlates* nameplates; this is now fixed and TankPlates works with **ShaguPlates**.
+* Probably does not work with class colour option in ShaguPlates.
 * Other tank functions should now behave correctly when using supported nameplate addons.
 
 ___

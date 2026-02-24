@@ -62,6 +62,27 @@ local GREEN = { .6, 1, 0, .8 }
 local RED = { .9, .2, .3, .8 }
 local YELLOW = { 1, 1, .3, .8 }
 local DARK_GREEN = { .5, .7, .3, .8 }
+-- colour mapping used by ShaguPlates (approximate, used for default plate colours)
+local SHAGU_UNITCOLORS = {
+  ["ENEMY_NPC"]      = { .9, .2, .3, .8 },
+  ["NEUTRAL_NPC"]    = { 1, 1, .3, .8 },
+  ["FRIENDLY_NPC"]   = { .6, 1, 0, .8 },
+  ["ENEMY_PLAYER"]   = { .9, .2, .3, .8 },
+  ["FRIENDLY_PLAYER"]= { .2, .6, 1, .8 },
+}
+
+-- ShaguPlates-like unit type detection based on underlying Blizzard nameplate
+local function GetUnitTypeFromRGB(red, green, blue)
+  if red > .9 and green < .2 and blue < .2 then
+    return "ENEMY_NPC"
+  elseif red > .9 and green > .9 and blue < .2 then
+    return "NEUTRAL_NPC"
+  elseif red < .2 and green < .2 and blue > 0.9 then
+    return "FRIENDLY_PLAYER"
+  elseif red < .2 and green > .9 and blue < .2 then
+    return "FRIENDLY_NPC"
+  end
+end
 
 -- shackle, sheep, hibernate, magic dust, etc
 local function UnitIsCC(unit)
@@ -322,10 +343,22 @@ local function InitPlate(plate)
         unit.last_color_reason = new_reason
       end
     else
-      -- not currently applying any special colouring; make sure we remember the
-      -- underlying bar colour so that when the mob drops out of combat we don't
-      -- keep painting it red/blue/green from an earlier fight.
+      -- not currently applying any special colouring; use the base Blizzard
+      -- colour to infer a unit type and fall back to that same colour.  This
+      -- mirrors the logic ShaguPlates uses to decide default plate colours.
       local r,g,b,a = this:GetStatusBarColor()
+
+      -- translate the raw colour back into a unit type and override with the
+      -- canonical Shagu colours if we know them (keeps consistency when other
+      -- addons tweak the raw bar colour).
+      local utype = GetUnitTypeFromRGB(r,g,b)
+      if utype then
+        local col = SHAGU_UNITCOLORS[utype]
+        if col then
+          r, g, b, a = unpack(col)
+        end
+      end
+
       unit.healthbar_color = { r, g, b, a }
       SetHealthBarColor(this, r, g, b, a)
     end
