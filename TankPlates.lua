@@ -87,11 +87,8 @@ local TP_COLOR_DEFAULTS = {
 
 -- Parse a "r,g,b,a" color string into four numbers.
 local function TP_ParseColor(s)
-  local t = {}
-  for v in string.gmatch(tostring(s or ""), "[^,]+") do
-    table.insert(t, tonumber(v) or 1)
-  end
-  return (t[1] or 1), (t[2] or 1), (t[3] or 1), (t[4] or 1)
+  local r, g, b, a = string.match(tostring(s or ""), "([^,]+),([^,]+),([^,]+),([^,]+)")
+  return (tonumber(r) or 1), (tonumber(g) or 1), (tonumber(b) or 1), (tonumber(a) or 1)
 end
 
 -- Sync TankPlates_config color strings into the live runtime color tables.
@@ -893,26 +890,24 @@ function TP_ToggleTankList()
 end
 
 local function SlashHandler(msg)
-  local args = {}
-  for word in string.gmatch(msg, "%S+") do
-    table.insert(args, word)
-  end
-  
+  msg = msg or ""
+  local cmd, param = string.match(msg, "^(%S*)%s*(%S*)")
+
   -- No args or "tanklist" - show tank list UI
-  if table.getn(args) == 0 or args[1] == "tanklist" then
+  if cmd == "" or cmd == "tanklist" then
     TP_ToggleTankList()
     return
   end
 
   -- "colors" / "settings" - open colour settings window
-  if args[1] == "colors" or args[1] == "settings" then
+  if cmd == "colors" or cmd == "settings" then
     TP_ToggleSettings()
     return
   end
-  
+
   -- "add" with name - add by name
-  if args[1] == "add" and args[2] then
-    local name = args[2]
+  if cmd == "add" and param ~= "" then
+    local name = param
     local unitid = nil
     
     -- Check if it's the player themselves
@@ -948,7 +943,7 @@ local function SlashHandler(msg)
   end
   
   -- "clear" - clear all
-  if args[1] == "clear" then
+  if cmd == "clear" then
     TP_ClearTankList()
     return
   end
