@@ -57,6 +57,10 @@ local player_guid = nil
 local tracked_guids = {}
 local tanks = {}  -- Array of {name = player_name, guid = guid}
 
+-- Tank list UI state (populated by TP_BuildTankListFrame on first open)
+local tankListRows = {}
+local tankListScrollFrame = nil
+
 -- in combat colours (filled at runtime from TankPlates_config by LoadColors)
 local IN_COMBAT_UNIT_COLORS = {}
 
@@ -106,22 +110,77 @@ local function LoadColors()
 end
 
 -- ============================================================
+-- UI helpers: ShaguPlates-compatible backdrop & button skin.
+-- Delegates to ShaguPlates when present (inherits user theme);
+-- falls back to a matching native implementation otherwise.
+-- ============================================================
+
+local function TP_CreateBackdrop(f)
+  if ShaguPlates and ShaguPlates.api and ShaguPlates.api.CreateBackdrop then
+    ShaguPlates.api.CreateBackdrop(f)
+    return
+  end
+  if not f or f.backdrop then return end
+  local bd = {
+    bgFile   = "Interface\\Buttons\\WHITE8X8",
+    edgeFile = "Interface\\Buttons\\WHITE8X8",
+    tile = false, tileSize = 0, edgeSize = 1,
+    insets = { left = 0, right = 0, top = 0, bottom = 0 },
+  }
+  local b = CreateFrame("Frame", nil, f)
+  local lvl = f:GetFrameLevel()
+  b:SetFrameLevel(lvl > 0 and lvl - 1 or 0)
+  b:SetPoint("TOPLEFT",     f, "TOPLEFT",    -1,  1)
+  b:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 1, -1)
+  b:SetBackdrop(bd)
+  b:SetBackdropColor(0, 0, 0, 0.85)
+  b:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
+  f.backdrop = b
+end
+
+local function TP_SkinButton(b)
+  if ShaguPlates and ShaguPlates.api and ShaguPlates.api.SkinButton then
+    ShaguPlates.api.SkinButton(b)
+    return
+  end
+  if not b then return end
+  local bd = {
+    bgFile   = "Interface\\Buttons\\WHITE8X8",
+    edgeFile = "Interface\\Buttons\\WHITE8X8",
+    tile = false, tileSize = 0, edgeSize = 1,
+    insets = { left = 0, right = 0, top = 0, bottom = 0 },
+  }
+  b:SetBackdrop(bd)
+  b:SetBackdropColor(0, 0, 0, 0.85)
+  b:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
+  b:SetNormalTexture("")
+  b:SetHighlightTexture("")
+  b:SetPushedTexture("")
+  if b.SetDisabledTexture then b:SetDisabledTexture("") end
+  local prevEnter = b:GetScript("OnEnter")
+  b:SetScript("OnEnter", function()
+    this:SetBackdropBorderColor(0.8, 0.8, 0.8, 1)
+    if prevEnter then prevEnter() end
+  end)
+  local prevLeave = b:GetScript("OnLeave")
+  b:SetScript("OnLeave", function()
+    this:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
+    if prevLeave then prevLeave() end
+  end)
+end
+
+-- ============================================================
 -- Colour settings UI
 -- ============================================================
 
--- Build the settings frame once and cache it in TankPlatesSettingsFrame.
--- Uses ShaguPlates.api.CreateBackdrop / SkinButton for visual consistency,
--- and Blizzard's built-in ColorPickerFrame (the same colour wheel ShaguPlates
--- itself uses) for colour selection.
 local function TP_BuildSettingsFrame()
   -- Frame already created on a previous call – reuse it.
   if TankPlatesSettingsFrame then
     return TankPlatesSettingsFrame
   end
 
-  -- ShaguPlates api helpers (not plain globals; must be accessed via ShaguPlates.api)
-  local CreateBackdrop = ShaguPlates.api.CreateBackdrop
-  local SkinButton = ShaguPlates.api.SkinButton
+  local CreateBackdrop = TP_CreateBackdrop
+  local SkinButton     = TP_SkinButton
 
   local f = CreateFrame("Frame", "TankPlatesSettingsFrame", UIParent)
   f:SetWidth(280)
@@ -132,7 +191,6 @@ local function TP_BuildSettingsFrame()
   f:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
   f:Hide()
 
-  -- ShaguPlates-styled backdrop (always available via RequiredDeps)
   CreateBackdrop(f)
 
   -- Dragging
@@ -260,6 +318,145 @@ function TP_ToggleSettings()
   else
     f:Show()
   end
+end
+
+-- ============================================================
+-- Tank list UI
+-- ============================================================
+
+local function TP_BuildTankListFrame()
+  if TankPlatesTankListFrame then
+    return TankPlatesTankListFrame
+  end
+
+  local CreateBackdrop = TP_CreateBackdrop
+  local SkinButton     = TP_SkinButton
+
+  local f = CreateFrame("Frame", "TankPlatesTankListFrame", UIParent)
+  f:SetWidth(240)
+  f:SetMovable(true)
+  f:EnableMouse(true)
+  f:SetFrameStrata("DIALOG")
+  f:SetToplevel(true)
+  f:SetPoint("CENTER", UIParent, "CENTER", 60, 0)
+  f:Hide()
+
+  CreateBackdrop(f)
+
+  f:SetScript("OnMouseDown", function() this:StartMoving() end)
+  f:SetScript("OnMouseUp",   function() this:StopMovingOrSizing() end)
+
+  -- Title
+  local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  title:SetPoint("TOP", f, "TOP", 0, -10)
+  title:SetText("TankPlates - Tank List")
+
+  -- Close button
+  local closeBtn = CreateFrame("Button", "TankPlatesTankListClose", f, "UIPanelCloseButton")
+  closeBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -2)
+  closeBtn:SetScript("OnClick", function() f:Hide() end)
+
+  -- Section header
+  local hdr = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  hdr:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -28)
+  hdr:SetText("|cffffff88Tanks|r")
+
+  -- Scrollframe (10 rows × 16 px = 160 px visible)
+  local sf = CreateFrame("ScrollFrame", "TankPlatesTankListFrameScrollFrame", f, "FauxScrollFrameTemplate")
+  sf:SetWidth(196)
+  sf:SetHeight(160)
+  sf:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -46)
+  sf:SetScript("OnVerticalScroll", function()
+    FauxScrollFrame_OnVerticalScroll(16, TP_TankListScrollFrame_Update)
+  end)
+  tankListScrollFrame = sf
+
+  -- 10 visible row frames
+  for i = 1, 10 do
+    local row = CreateFrame("Frame", nil, f)
+    row:SetWidth(196)
+    row:SetHeight(16)
+    if i == 1 then
+      row:SetPoint("TOPLEFT", sf, "TOPLEFT", 0, 0)
+    else
+      row:SetPoint("TOPLEFT", tankListRows[i - 1].frame, "BOTTOMLEFT", 0, 0)
+    end
+
+    -- Name label
+    local lbl = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    lbl:SetPoint("LEFT",  row, "LEFT",  2,   0)
+    lbl:SetPoint("RIGHT", row, "RIGHT", -20, 0)
+    lbl:SetJustifyH("LEFT")
+
+    -- [X] remove button
+    local xBtn = CreateFrame("Button", nil, row)
+    xBtn:SetWidth(16)
+    xBtn:SetHeight(16)
+    xBtn:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    local xTxt = xBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    xTxt:SetAllPoints(xBtn)
+    xTxt:SetText("|cffff6060X|r")
+    xBtn:SetScript("OnEnter", function()
+      GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+      GameTooltip:SetText("Remove from tank list")
+      GameTooltip:Show()
+    end)
+    xBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    xBtn:SetScript("OnClick", function()
+      local id = this.arrayIndex
+      if id and tanks[id] then
+        local name = tanks[id].name
+        table.remove(tanks, id)
+        tp_print("Removed " .. name .. " from tank list")
+        TP_TankListScrollFrame_Update()
+      end
+    end)
+
+    row:Hide()
+    tankListRows[i] = { frame = row, label = lbl, removeBtn = xBtn }
+  end
+
+  -- Bottom action buttons
+  local addTargetBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+  addTargetBtn:SetWidth(80)
+  addTargetBtn:SetHeight(20)
+  addTargetBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 10)
+  addTargetBtn:SetText("Add Target")
+  addTargetBtn:SetScript("OnClick", function() TP_AddTargetToTankList() end)
+  addTargetBtn:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_TOPRIGHT")
+    GameTooltip:SetText("Add your current target to the tank list")
+    GameTooltip:Show()
+  end)
+  addTargetBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  SkinButton(addTargetBtn)
+
+  local addMeBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+  addMeBtn:SetWidth(62)
+  addMeBtn:SetHeight(20)
+  addMeBtn:SetPoint("LEFT", addTargetBtn, "RIGHT", 4, 0)
+  addMeBtn:SetText("Add Me")
+  addMeBtn:SetScript("OnClick", function() TP_AddPlayerToTankList() end)
+  addMeBtn:SetScript("OnEnter", function()
+    GameTooltip:SetOwner(this, "ANCHOR_TOPRIGHT")
+    GameTooltip:SetText("Add yourself to the tank list")
+    GameTooltip:Show()
+  end)
+  addMeBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  SkinButton(addMeBtn)
+
+  local clearBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+  clearBtn:SetWidth(50)
+  clearBtn:SetHeight(20)
+  clearBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -14, 10)
+  clearBtn:SetText("Clear")
+  clearBtn:SetScript("OnClick", function() TP_ClearTankList() end)
+  SkinButton(clearBtn)
+
+  -- Height: 28 title + 18 header + 160 scroll + 12 gap + 20 buttons + 12 bottom pad
+  f:SetHeight(252)
+
+  return f
 end
 
 -- ShaguPlates-like unit type detection based on underlying Blizzard nameplate
@@ -665,52 +862,32 @@ end
 
 -- Update tank list scroll frame
 function TP_TankListScrollFrame_Update()
-  if not TankPlatesTankListFrameScrollFrame then
-    return
-  end
-  
-  local offset = FauxScrollFrame_GetOffset(TankPlatesTankListFrameScrollFrame)
-  local numTanks = table.getn(tanks)
-  FauxScrollFrame_Update(TankPlatesTankListFrameScrollFrame, numTanks, 10, 16)
-  
-  for i = 1, 10 do
-    local button = getglobal("TankPlatesTankListFrameButton"..i)
-    local buttonText = getglobal("TankPlatesTankListFrameButton"..i.."Text")
-    local arrayIndex = i + offset
-    
-    if tanks[arrayIndex] then
-      buttonText:SetText(arrayIndex .. " - " .. tanks[arrayIndex].name)
-      button:SetID(arrayIndex)
-      button:Show()
-    else
-      button:Hide()
-    end
-  end
-end
+  if not tankListScrollFrame then return end
 
--- Tank list button click handler (called from [X] button)
-function TP_TankListButton_OnClick()
-  -- Get ID from parent button (the [X] is a child of the main button)
-  local id = this:GetParent():GetID()
-  if id and tanks[id] then
-    local name = tanks[id].name
-    table.remove(tanks, id)
-    tp_print("Removed " .. name .. " from tank list")
-    TP_TankListScrollFrame_Update()
+  local offset = FauxScrollFrame_GetOffset(tankListScrollFrame)
+  local numTanks = table.getn(tanks)
+  FauxScrollFrame_Update(tankListScrollFrame, numTanks, 10, 16)
+
+  for i = 1, 10 do
+    local row = tankListRows[i]
+    local arrayIndex = i + offset
+    row.removeBtn.arrayIndex = arrayIndex
+    if tanks[arrayIndex] then
+      row.label:SetText(arrayIndex .. " - " .. tanks[arrayIndex].name)
+      row.frame:Show()
+    else
+      row.frame:Hide()
+    end
   end
 end
 
 -- Show/hide tank list UI
 function TP_ToggleTankList()
-  if not TankPlatesTankListFrame then
-    tp_print("ERROR: Tank list frame not loaded. Check TankPlatesUI.xml")
-    return
-  end
-  
-  if TankPlatesTankListFrame:IsVisible() then
-    TankPlatesTankListFrame:Hide()
+  local f = TP_BuildTankListFrame()
+  if f:IsShown() then
+    f:Hide()
   else
-    TankPlatesTankListFrame:Show()
+    f:Show()
     TP_TankListScrollFrame_Update()
   end
 end
@@ -865,4 +1042,4 @@ SLASH_TANKPLATES1 = "/tp"
 SlashCmdList["TANKPLATES"] = SlashHandler
 
 -- Confirm addon loaded
-DEFAULT_CHAT_FRAME:AddMessage("[|cff00ff00Tank|cffff0000Plates|r] Loaded successfully. Type /tp for help.")
+DEFAULT_CHAT_FRAME:AddMessage("[|cff00ff00Tank|cffff0000Plates|r] |cffff8000[Jonaldo Edition]|r Loaded successfully. Type /tp for help.")
