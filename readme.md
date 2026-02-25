@@ -16,7 +16,7 @@ Use `/tp` to open the tank list window and manage multiple tanks.
 
 **Color Guide:**
 * Bright Green - You have aggro
-* Blue - Another tank has aggro
+* Dark Green - Another tank has aggro
 * Red - Non-tank has aggro (DPS/healer pulled!)
 * Yellow - Enemy is crowd controlled
 

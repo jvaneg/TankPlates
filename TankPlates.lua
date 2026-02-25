@@ -57,18 +57,21 @@ local player_guid = nil
 local tracked_guids = {}
 local tanks = {}  -- Array of {name = player_name, guid = guid}
 
--- Colours
-local GREEN = { .6, 1, 0, .8 }
-local RED = { .9, .2, .3, .8 }
-local YELLOW = { 1, 1, .3, .8 }
-local DARK_GREEN = { .5, .7, .3, .8 }
--- colour mapping used by ShaguPlates (approximate, used for default plate colours)
-local SHAGU_UNITCOLORS = {
-  ["ENEMY_NPC"]      = { .9, .2, .3, .8 },
-  ["NEUTRAL_NPC"]    = { 1, 1, .3, .8 },
-  ["FRIENDLY_NPC"]   = { .6, 1, 0, .8 },
-  ["ENEMY_PLAYER"]   = { .9, .2, .3, .8 },
-  ["FRIENDLY_PLAYER"]= { .2, .6, 1, .8 },
+-- in combat colours
+local IN_COMBAT_UNIT_COLORS = {
+  ["ATTACKING_YOU"] = { .6, 1, 0, .8 },
+  ["ATTACKING_SQUISHY"] = { .9, .2, .3, .8 },
+  ["CROWD_CONTROLLED"] = { 1, 1, .3, .8 },
+  ["ATTACKING_TANK"] = { .5, .7, .3, .8 },
+}
+
+-- out of combat default plate colours (currently hardcoded to map to ShaguPlates defaults)
+local OUT_OF_COMBAT_UNIT_COLORS = {
+  ["ENEMY_NPC"] = { .9, .2, .3, .8 },
+  ["NEUTRAL_NPC"] = { 1, 1, .3, .8 },
+  ["FRIENDLY_NPC"] = { .6, 1, 0, .8 },
+  ["ENEMY_PLAYER"] = { .9, .2, .3, .8 },
+  ["FRIENDLY_PLAYER"] = { .2, .6, 1, .8 },
 }
 
 -- ShaguPlates-like unit type detection based on underlying Blizzard nameplate
@@ -280,19 +283,19 @@ local function InitPlate(plate)
       
       if unit.cc then
         new_reason = "CC"
-        SetHealthBarColor(this, unpack(YELLOW))
+        SetHealthBarColor(this, unpack(IN_COMBAT_UNIT_COLORS['CROWD_CONTROLLED']))
       elseif (unit.casting and (unit.casting_at == player_guid or unit.previous_target == player_guid)) then
         new_reason = "CastingAtYou"
         -- casting on someone but was attacking you
-        SetHealthBarColor(this, unpack(GREEN)) -- green
+        SetHealthBarColor(this, unpack(IN_COMBAT_UNIT_COLORS['ATTACKING_YOU']))
       elseif unit.current_target == player_guid then
         new_reason = "AttackingYou"
         -- attacking you
-        SetHealthBarColor(this, unpack(GREEN)) -- green (use same as others)
+        SetHealthBarColor(this, unpack(IN_COMBAT_UNIT_COLORS['ATTACKING_YOU']))
       elseif not unit.casting and (not unit.current_target and unit.previous_target == player_guid) then
         new_reason = "Fleeing"
         -- fleeing but was attacking you
-        SetHealthBarColor(this, unpack(GREEN)) -- green
+        SetHealthBarColor(this, unpack(IN_COMBAT_UNIT_COLORS['ATTACKING_YOU']))
       else
         -- not attacking you, check tank assignments
         
@@ -312,14 +315,14 @@ local function InitPlate(plate)
         
         if IsPlayerTank(effective_target) then
           new_reason = "PlayerTankAggro"
-          SetHealthBarColor(this, unpack(GREEN)) -- bright green - YOU have aggro
+          SetHealthBarColor(this, unpack(IN_COMBAT_UNIT_COLORS['ATTACKING_YOU'])) -- YOU have aggro
         elseif IsTank(effective_target) then
           new_reason = "OtherTankAggro"
-          SetHealthBarColor(this, unpack(DARK_GREEN)) -- blue - other tank has aggro
+          SetHealthBarColor(this, unpack(IN_COMBAT_UNIT_COLORS['ATTACKING_TANK'])) -- other tank has aggro
         else
           new_reason = "NonTankAggro"
           -- non-tank has aggro
-          SetHealthBarColor(this, unpack(RED)) -- red
+          SetHealthBarColor(this, unpack(IN_COMBAT_UNIT_COLORS['ATTACKING_SQUISHY'])) -- attacking other than tanks
         end
       end
       
@@ -353,7 +356,7 @@ local function InitPlate(plate)
       -- addons tweak the raw bar colour).
       local utype = GetUnitTypeFromRGB(r,g,b)
       if utype then
-        local col = SHAGU_UNITCOLORS[utype]
+        local col = OUT_OF_COMBAT_UNIT_COLORS[utype]
         if col then
           r, g, b, a = unpack(col)
         end
