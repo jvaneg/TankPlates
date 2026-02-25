@@ -57,22 +57,210 @@ local player_guid = nil
 local tracked_guids = {}
 local tanks = {}  -- Array of {name = player_name, guid = guid}
 
--- in combat colours
-local IN_COMBAT_UNIT_COLORS = {
-  ["ATTACKING_YOU"] = { .6, 1, 0, .8 },
-  ["ATTACKING_SQUISHY"] = { .9, .2, .3, .8 },
-  ["CROWD_CONTROLLED"] = { 1, 1, .3, .8 },
-  ["ATTACKING_TANK"] = { .5, .7, .3, .8 },
+-- in combat colours (filled at runtime from TankPlates_config by LoadColors)
+local IN_COMBAT_UNIT_COLORS = {}
+
+-- out of combat colours (filled at runtime from TankPlates_config by LoadColors)
+local OUT_OF_COMBAT_UNIT_COLORS = {}
+
+-- ============================================================
+-- Colour config: defaults, persistence, and runtime loading
+-- ============================================================
+
+-- Hardcoded defaults stored as "r,g,b,a" strings (ShaguPlates convention).
+-- These are written into TankPlates_config the first time the addon loads.
+local TP_COLOR_DEFAULTS = {
+  in_attacking_you     = "0.6,1,0,0.8",
+  in_attacking_squishy = "0.9,0.2,0.3,0.8",
+  in_crowd_controlled  = "1,1,0.3,0.8",
+  in_attacking_tank    = "0.5,0.7,0.3,0.8",
+  out_enemy_npc        = "0.9,0.2,0.3,0.8",
+  out_neutral_npc      = "1,1,0.3,0.8",
+  out_friendly_npc     = "0.6,1,0,0.8",
+  out_enemy_player     = "0.9,0.2,0.3,0.8",
+  out_friendly_player  = "0.2,0.6,1,0.8",
 }
 
--- out of combat default plate colours (currently hardcoded to map to ShaguPlates defaults)
-local OUT_OF_COMBAT_UNIT_COLORS = {
-  ["ENEMY_NPC"] = { .9, .2, .3, .8 },
-  ["NEUTRAL_NPC"] = { 1, 1, .3, .8 },
-  ["FRIENDLY_NPC"] = { .6, 1, 0, .8 },
-  ["ENEMY_PLAYER"] = { .9, .2, .3, .8 },
-  ["FRIENDLY_PLAYER"] = { .2, .6, 1, .8 },
-}
+-- Parse a "r,g,b,a" color string into four numbers.
+local function TP_ParseColor(s)
+  local t = {}
+  for v in string.gmatch(tostring(s or ""), "[^,]+") do
+    table.insert(t, tonumber(v) or 1)
+  end
+  return (t[1] or 1), (t[2] or 1), (t[3] or 1), (t[4] or 1)
+end
+
+-- Sync TankPlates_config color strings into the live runtime color tables.
+-- Called once on VARIABLES_LOADED and again after any in-game color change.
+local function LoadColors()
+  local c = TankPlates_config
+  IN_COMBAT_UNIT_COLORS["ATTACKING_YOU"] = { TP_ParseColor(c.in_attacking_you) }
+  IN_COMBAT_UNIT_COLORS["ATTACKING_SQUISHY"] = { TP_ParseColor(c.in_attacking_squishy) }
+  IN_COMBAT_UNIT_COLORS["CROWD_CONTROLLED"] = { TP_ParseColor(c.in_crowd_controlled) }
+  IN_COMBAT_UNIT_COLORS["ATTACKING_TANK"] = { TP_ParseColor(c.in_attacking_tank) }
+  OUT_OF_COMBAT_UNIT_COLORS["ENEMY_NPC"] = { TP_ParseColor(c.out_enemy_npc) }
+  OUT_OF_COMBAT_UNIT_COLORS["NEUTRAL_NPC"] = { TP_ParseColor(c.out_neutral_npc) }
+  OUT_OF_COMBAT_UNIT_COLORS["FRIENDLY_NPC"] = { TP_ParseColor(c.out_friendly_npc) }
+  OUT_OF_COMBAT_UNIT_COLORS["ENEMY_PLAYER"] = { TP_ParseColor(c.out_enemy_player) }
+  OUT_OF_COMBAT_UNIT_COLORS["FRIENDLY_PLAYER"] = { TP_ParseColor(c.out_friendly_player) }
+end
+
+-- ============================================================
+-- Colour settings UI
+-- ============================================================
+
+-- Build the settings frame once and cache it in TankPlatesSettingsFrame.
+-- Uses ShaguPlates.api.CreateBackdrop / SkinButton for visual consistency,
+-- and Blizzard's built-in ColorPickerFrame (the same colour wheel ShaguPlates
+-- itself uses) for colour selection.
+local function TP_BuildSettingsFrame()
+  -- Frame already created on a previous call – reuse it.
+  if TankPlatesSettingsFrame then
+    return TankPlatesSettingsFrame
+  end
+
+  -- ShaguPlates api helpers (not plain globals; must be accessed via ShaguPlates.api)
+  local CreateBackdrop = ShaguPlates.api.CreateBackdrop
+  local SkinButton = ShaguPlates.api.SkinButton
+
+  local f = CreateFrame("Frame", "TankPlatesSettingsFrame", UIParent)
+  f:SetWidth(280)
+  f:SetMovable(true)
+  f:EnableMouse(true)
+  f:SetFrameStrata("DIALOG")
+  f:SetToplevel(true)
+  f:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+  f:Hide()
+
+  -- ShaguPlates-styled backdrop (always available via RequiredDeps)
+  CreateBackdrop(f)
+
+  -- Dragging
+  f:SetScript("OnMouseDown", function() this:StartMoving() end)
+  f:SetScript("OnMouseUp",   function() this:StopMovingOrSizing() end)
+
+  -- Title
+  local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  title:SetPoint("TOP", f, "TOP", 0, -10)
+  title:SetText("TankPlates Colors")
+
+  -- Close button
+  local closeBtn = CreateFrame("Button", "TankPlatesSettingsClose", f, "UIPanelCloseButton")
+  closeBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -2)
+  closeBtn:SetScript("OnClick", function() f:Hide() end)
+
+  -- Layout cursor and swatch registry (for Reset)
+  local yOffset = -28
+  local swatches = {}
+
+  local function AddSectionHeader(text)
+    local hdr = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    hdr:SetPoint("TOPLEFT", f, "TOPLEFT", 14, yOffset)
+    hdr:SetText("|cffffff88" .. text .. "|r")
+    yOffset = yOffset - 18
+  end
+
+  local function AddColorRow(key, label)
+    -- Row label
+    local lbl = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    lbl:SetPoint("TOPLEFT", f, "TOPLEFT", 14, yOffset)
+    lbl:SetText(label)
+
+    -- Colour swatch button
+    local swatch = CreateFrame("Button", nil, f)
+    swatch:SetWidth(28)
+    swatch:SetHeight(14)
+    swatch:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, yOffset + 3)
+    CreateBackdrop(swatch)
+
+    -- Preview texture fills the swatch
+    swatch.preview = swatch.backdrop:CreateTexture(nil, "OVERLAY")
+    swatch.preview:SetAllPoints(swatch.backdrop)
+
+    -- Seed preview from current config value
+    local r, g, b, a = TP_ParseColor(TankPlates_config[key])
+    swatch.preview:SetTexture(r, g, b, a)
+
+    -- Click opens Blizzard's ColorPickerFrame (identical pattern to ShaguPlates)
+    swatch:SetScript("OnClick", function()
+      local cr, cg, cb, ca = TP_ParseColor(TankPlates_config[key])
+      local myPreview = swatch.preview
+
+      ColorPickerFrame.func = function()
+        local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+        local na = 1 - OpacitySliderFrame:GetValue()
+        -- Round to 1 decimal place
+        local function rnd(v) return math.floor(v * 10 + 0.5) / 10 end
+        nr, ng, nb, na = rnd(nr), rnd(ng), rnd(nb), rnd(na)
+        myPreview:SetTexture(nr, ng, nb, na)
+        TankPlates_config[key] = nr .. "," .. ng .. "," .. nb .. "," .. na
+        LoadColors()
+      end
+
+      ColorPickerFrame.cancelFunc = function()
+        myPreview:SetTexture(cr, cg, cb, ca)
+      end
+
+      ColorPickerFrame.opacityFunc = ColorPickerFrame.func
+      ColorPickerFrame.opacity     = 1 - ca
+      ColorPickerFrame.hasOpacity  = 1
+      ColorPickerFrame:SetColorRGB(cr, cg, cb)
+      ColorPickerFrame:SetFrameStrata("DIALOG")
+      ShowUIPanel(ColorPickerFrame)
+    end)
+
+    table.insert(swatches, { key = key, swatch = swatch })
+    yOffset = yOffset - 22
+  end
+
+  -- Rows
+  AddSectionHeader("In Combat")
+  AddColorRow("in_attacking_you",     "Attacking You")
+  AddColorRow("in_attacking_squishy", "Non-Tank Has Aggro")
+  AddColorRow("in_crowd_controlled",  "Crowd Controlled")
+  AddColorRow("in_attacking_tank",    "Other Tank Has Aggro")
+  AddSectionHeader("Out of Combat")
+  AddColorRow("out_enemy_npc",        "Enemy NPC")
+  AddColorRow("out_neutral_npc",      "Neutral NPC")
+  AddColorRow("out_friendly_npc",     "Friendly NPC")
+  AddColorRow("out_enemy_player",     "Enemy Player")
+  AddColorRow("out_friendly_player",  "Friendly Player")
+
+  -- Reset Defaults button
+  local resetBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+  resetBtn:SetWidth(110)
+  resetBtn:SetHeight(20)
+  resetBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 10)
+  resetBtn:SetText("Reset Defaults")
+  resetBtn:SetScript("OnClick", function()
+    for k, v in pairs(TP_COLOR_DEFAULTS) do
+      TankPlates_config[k] = v
+    end
+    LoadColors()
+    -- Refresh every swatch preview without rebuilding the frame
+    for _, entry in ipairs(swatches) do
+      local r, g, b, a = TP_ParseColor(TankPlates_config[entry.key])
+      entry.swatch.preview:SetTexture(r, g, b, a)
+    end
+    tp_print("TankPlates colors reset to defaults.")
+  end)
+  SkinButton(resetBtn)
+
+  -- Size the frame height to fit the content
+  f:SetHeight(math.abs(yOffset) + 42)
+
+  return f
+end
+
+-- Public toggle – creates frame on first call, then show/hides.
+function TP_ToggleSettings()
+  local f = TP_BuildSettingsFrame()
+  if f:IsShown() then
+    f:Hide()
+  else
+    f:Show()
+  end
+end
 
 -- ShaguPlates-like unit type detection based on underlying Blizzard nameplate
 local function GetUnitTypeFromRGB(red, green, blue)
@@ -538,6 +726,12 @@ local function SlashHandler(msg)
     TP_ToggleTankList()
     return
   end
+
+  -- "colors" / "settings" - open colour settings window
+  if args[1] == "colors" or args[1] == "settings" then
+    TP_ToggleSettings()
+    return
+  end
   
   -- "add" with name - add by name
   if args[1] == "add" and args[2] then
@@ -588,6 +782,7 @@ local function SlashHandler(msg)
   tp_print("/tp tanklist - Show/hide tank list window")
   tp_print("/tp add [name] - Add player to tank list")
   tp_print("/tp clear - Clear all tanks")
+  tp_print("/tp colors - Open colour settings window")
   tp_print("")
   tp_print("Color Guide:")
   tp_print("Bright Green - You have aggro")
@@ -630,12 +825,22 @@ local function Events()
 end
 
 local function Init()
-  if event == "PLAYER_ENTERING_WORLD" then
+  if event == "VARIABLES_LOADED" then
+    -- Initialise saved variable, writing any missing keys with their defaults.
+    if not TankPlates_config then TankPlates_config = {} end
+    for k, v in pairs(TP_COLOR_DEFAULTS) do
+      if TankPlates_config[k] == nil then
+        TankPlates_config[k] = v
+      end
+    end
+    LoadColors()
+  elseif event == "PLAYER_ENTERING_WORLD" then
     _,player_guid = UnitExists("player")
     debug_always("Player GUID: " .. tostring(player_guid))
     this:SetScript("OnEvent", Events)
     this:SetScript("OnUpdate", Update)
     this:UnregisterEvent("PLAYER_ENTERING_WORLD")
+    this:UnregisterEvent("VARIABLES_LOADED")
 
     -- if shagu already present, make sure plates are hooked after it
     if ShaguPlates then
@@ -651,6 +856,7 @@ end
 
 local tankplates = CreateFrame("Frame")
 tankplates:SetScript("OnEvent", Init)
+tankplates:RegisterEvent("VARIABLES_LOADED")
 tankplates:RegisterEvent("PLAYER_ENTERING_WORLD")
 tankplates:RegisterEvent("UNIT_CASTEVENT")
 tankplates:RegisterEvent("ADDON_LOADED")  -- watch for ShaguPlates loading later

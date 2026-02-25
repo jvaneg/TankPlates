@@ -5,5 +5,6 @@
 ## Author: Ehawne (Weird Vibes)
 ## Version: 1.4.1
 ## RequiredDeps: ShaguPlates
+## SavedVariables: TankPlates_config
 
 TankPlates.xml
