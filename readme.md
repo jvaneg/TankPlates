@@ -13,6 +13,8 @@
 * Multi-tank support with a scrollable in-game tank list
 * All plate colors are fully customizable in-game
 
+<img width="980" height="586" alt="image" src="https://github.com/user-attachments/assets/46636dbb-7e7c-4448-ab60-2b2ff1b60d55" />
+
 ### Color Guide (defaults)
 
 | Color | Meaning |
