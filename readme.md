@@ -2,29 +2,53 @@
 
 * For 1.12 wow client
 * Requires [SuperWoW](https://github.com/balakethelock/SuperWoW/)
-* Update both SuperWoW and this addon if you experience errors
+* [ShaguPlates](https://github.com/shagu/ShaguPlates) is **optional** - TankPlates works standalone and enhances its UI when ShaguPlates is present
+* Update SuperWoW and this addon together if you experience errors
 
 ## Features
 
-* Colors enemy plates depending on who they're attacking
-* Text highlight for the enemy you're targeting
-* Support for multiple tanks with easy GUI management
+* Colors enemy nameplates based on who they are attacking
+* Text highlight on the enemy you are currently targeting
+* CC detection - plates turn yellow when an enemy is sheeped, shackled, trapped, etc.
+* Multi-tank support with a scrollable in-game tank list
+* All plate colors are fully customizable in-game
 
-### Tank Management
+### Color Guide (defaults)
 
-Use `/tp` to open the tank list window and manage multiple tanks.
+| Color | Meaning |
+|---|---|
+| Bright green | The mob is attacking **you** |
+| Dark green | The mob is attacking **another tank** |
+| Red | The mob is attacking a **non-tank** (DPS/healer pulled!) |
+| Yellow | The mob is **crowd controlled** |
 
-**Color Guide:**
-* Bright Green - You have aggro
-* Dark Green - Another tank has aggro
-* Red - Non-tank has aggro (DPS/healer pulled!)
-* Yellow - Enemy is crowd controlled
+Out-of-combat colors mirror normal nameplate conventions (red = enemy NPC, yellow = neutral, green = friendly, blue = friendly player).
 
-## Compatibility & Notes
+## Commands
 
-* Colours were previously not being passed through correctly to *ShaguPlates* nameplates; this is now fixed and TankPlates works with **ShaguPlates**.
-* Probably does not work with class colour option in ShaguPlates.
-* Other tank functions should now behave correctly when using supported nameplate addons.
+| Command | Description |
+|---|---|
+| `/tp` | Toggle the tank list window |
+| `/tp tanklist` | Toggle the tank list window |
+| `/tp add [name]` | Add a party/raid member to the tank list by name |
+| `/tp clear` | Remove all tanks from the list |
+| `/tp colors` | Open the color settings window |
+| `/tp settings` | Open the color settings window |
+
+The **tank list window** also has buttons to add your current target or yourself directly.  
+Tanks can be removed individually with the **\[X\]** button next to each entry.
+
+## Customizing Colors
+
+Open `/tp colors` to customize every nameplate color category via an in-game color picker. Changes apply immediately and are saved between sessions. A **Reset Defaults** button restores all colors to their original values.
+
+## Compatibility
+
+* Works with **ShaguPlates** - nameplate colors are applied through ShaguPlates' overlay when present, so they respect its health bar layout. The UI also inherits the ShaguPlates visual theme automatically.
+* Does **not** require ShaguPlates - all features work with vanilla Blizzard nameplates.
+* May not be compatible with the ShaguPlates class-color option.
 
 ___
-* Made by and for Weird Vibes of Turtle Wow  
+* Originally made by and for Weird Vibes of Turtle WoW
+* daemonp - Added multi-tank support
+* Jonaldo Edition: ShaguPlates integration, color customization UI

@@ -1,10 +1,9 @@
 ## Interface: 11200
 ## Title: [SuperWoW] Tank Plates 1.4.1 |cffff8000[Jonaldo Edition]|r
-## Notes: highlight mobs that aren't targeting you; colour support now works with ShaguPlates/pfUI (disable ShaguTweaks nameplates)
-## Notes-ruRU: подсвечивает мобов, которые не нацелены на вас
-## Author: Ehawne (Weird Vibes)
+## Notes: Colours enemy nameplates by aggro target; multi-tank support; in-game colour customisation; ShaguPlates support
+## Author: Ehawne (Weird Vibes), daemonp, Jonaldo
 ## Version: 1.4.1
-## RequiredDeps: ShaguPlates
+## OptionalDeps: ShaguPlates
 ## SavedVariables: TankPlates_config
 
 TankPlates.xml
